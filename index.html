@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>The Map Is The Plan — Gaza's Yellow Line</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{
+    --paper:#f3ece4; --panel:#faf6ef; --ink:#25302a; --sub:#5c6a60;
+    --line:#d8cfc0; --accent:#b02a20; --gold:#e0a800; --held:#c96f66;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:var(--ink)}
+  #map{position:fixed;inset:0;width:100vw;height:100vh;background:#dbe5ea}
+
+  /* ---------- floating panel ---------- */
+  #panel{
+    position:fixed;top:24px;right:24px;width:370px;max-height:calc(100vh - 48px);
+    background:var(--panel);border:1px solid #b9ac97;z-index:1000;
+    display:flex;flex-direction:column;box-shadow:0 2px 14px rgba(30,25,15,.18);
+  }
+  #panel .head{padding:16px 18px 12px;border-bottom:1px solid var(--line)}
+  #panel h1{font-size:19px;letter-spacing:.06em;font-weight:800;text-transform:uppercase}
+  #panel .sub{font-size:12px;color:var(--sub);margin-top:5px;line-height:1.45}
+  #panel .scroll{overflow-y:auto;flex:1}
+  .sect{padding:12px 18px;border-bottom:1px solid var(--line)}
+  .sect h2{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--sub);margin-bottom:8px}
+
+  .lrow{display:flex;align-items:flex-start;gap:10px;padding:5px 0;cursor:pointer;font-size:12.5px;line-height:1.35}
+  .lrow input{margin-top:2px;accent-color:var(--accent)}
+  .lrow .sw{flex:0 0 26px;height:14px;margin-top:2px;position:relative}
+  .sw.yline-today::before{content:'';position:absolute;left:0;right:0;top:5px;height:4px;background:var(--gold);border:1px solid #8a6d00;border-radius:2px}
+  .sw.yline-oct::before{content:'';position:absolute;left:0;right:0;top:6px;border-top:3px dashed #a8870a}
+  .sw.band::before{content:'';position:absolute;inset:1px 0;background:repeating-linear-gradient(45deg,#d98880 0 3px,#e9b7b2 3px 6px);border:1px solid var(--accent)}
+  .sw.held::before{content:'';position:absolute;inset:1px 0;background:rgba(201,111,102,.45);border:1px solid #b05a52}
+  .sw.corr::before{content:'';position:absolute;inset:1px 0;background:repeating-linear-gradient(90deg,var(--accent) 0 2px,transparent 2px 5px)}
+  .sw.outpost::before{content:'▲';position:absolute;inset:0;font-size:12px;color:#8c2f25;text-align:center;line-height:14px}
+  .sw.strike::before{content:'★';position:absolute;inset:0;font-size:13px;color:var(--accent);text-align:center;line-height:14px}
+  .sw.cross::before{content:'▢';position:absolute;inset:0;font-size:13px;color:var(--ink);text-align:center;line-height:14px}
+  .sw.isf::before{content:'★';position:absolute;inset:0;font-size:13px;color:var(--gold);text-align:center;line-height:14px;-webkit-text-stroke:.5px #6a5600}
+  .sw.erased::before{content:'✕';position:absolute;inset:0;font-size:14px;font-weight:800;color:var(--accent);text-align:center;line-height:14px}
+  .sw.disp::before{content:'→';position:absolute;inset:0;font-size:13px;color:#5a6572;text-align:center;line-height:14px}
+  .sw.evid::before{content:'1';position:absolute;inset:0;width:14px;height:14px;margin:auto;background:var(--accent);color:#fff;font-size:9px;font-weight:700;text-align:center;line-height:14px;transform:rotate(45deg)}
+  .sw.evid::after{content:''}
+
+  #evidence .item{padding:9px 0;border-top:1px solid var(--line);cursor:pointer}
+  #evidence .item:first-of-type{border-top:none}
+  #evidence .item:hover{background:#f0e8db}
+  #evidence .num{display:inline-block;width:20px;height:20px;background:var(--accent);color:#fff;font-weight:800;font-size:11px;text-align:center;line-height:20px;transform:rotate(45deg);margin-right:10px;vertical-align:top}
+  #evidence .num span{display:inline-block;transform:rotate(-45deg)}
+  #evidence .t{font-size:12px;font-weight:800;letter-spacing:.04em}
+  #evidence .d{font-size:11.5px;color:var(--sub);line-height:1.5;margin-top:3px}
+
+  #panel .foot{padding:10px 18px;font-size:10px;color:#8a8272;line-height:1.5;border-top:1px solid var(--line)}
+
+  #collapseBtn{display:none}
+
+  /* ---------- map feature styling ---------- */
+  .city-label{background:none;border:none;box-shadow:none;font-size:11px;font-weight:600;color:#1d2b3a;text-shadow:0 0 3px #fff,0 0 5px #fff,0 0 7px #fff}
+  .city-big{font-size:13px;font-weight:800}
+  .city-held{color:#7c241c}
+  .city-rafah{font-size:14px;font-weight:800;color:var(--accent)}
+  .leaflet-tooltip.city-label:before{display:none}
+  .evid-diamond{background:var(--accent);color:#fff;font-weight:800;font-size:11px;text-align:center;transform:rotate(45deg);border:1.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)}
+  .evid-diamond span{display:inline-block;transform:rotate(-45deg)}
+  .outpost-tri{color:#8c2f25;font-size:13px;text-shadow:0 0 2px #fff}
+  .strike-star{color:var(--accent);font-size:16px;text-shadow:0 0 2px #fff}
+  .isf-star{color:var(--gold);font-size:20px;text-shadow:0 0 3px #3a3000}
+  .cross-sq{font-size:15px;color:#1d2b3a;text-shadow:0 0 3px #fff}
+  .rafah-x{font-size:22px;font-weight:800;color:var(--accent);text-shadow:0 0 3px #fff}
+  .leaflet-popup-content{font-size:12.5px;line-height:1.5;margin:10px 14px}
+  .leaflet-popup-content b{font-size:13px;letter-spacing:.03em}
+  .leaflet-container{font-family:inherit}
+
+  @media (max-width:760px){
+    #panel{top:auto;bottom:0;right:0;left:0;width:100%;max-height:46vh;border-left:none;border-right:none;border-bottom:none}
+    #panel .head{padding:10px 16px 8px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+    #panel h1{font-size:15px}
+    #panel .sub{font-size:11px}
+    #collapseBtn{display:block;background:none;border:1px solid #b9ac97;font-size:11px;padding:3px 9px;cursor:pointer;color:var(--ink)}
+    #panel.collapsed .scroll,#panel.collapsed .foot{display:none}
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="panel">
+  <div class="head">
+    <div>
+      <h1>The Map Is The Plan</h1>
+      <div class="sub">Gaza's "yellow line", one year after the "ceasefire" — the encroachment, the erasure, and the evidence. Zoom in; every marker opens its source.</div>
+    </div>
+    <button id="collapseBtn">Show / hide</button>
+  </div>
+  <div class="scroll">
+    <div class="sect">
+      <h2>Layers</h2>
+      <div id="layers"></div>
+    </div>
+    <div class="sect" id="evidence">
+      <h2>The Evidence for Erasure — five documented facts</h2>
+    </div>
+  </div>
+  <div class="foot">
+    Approximate schematic compiled from AP satellite analysis (7 Oct 2026), Al Jazeera Sanad, OCHA / Gaza Health Ministry, Board of Peace Roadmap (Jul 2026), INSS Special Publication (12 Oct 2026), UNSC Resolution 2803, G. Galloway / Hats Off footage (16 Oct 2026). Boundary: geoBoundaries (CC-BY 4.0). Base map © OpenStreetMap contributors © CARTO. Compiled October 2026.
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.min.js"></script>
+<script src="data.js"></script>
+<script>
+const D = MAP_DATA;
+const map = L.map('map',{zoomControl:false, minZoom:9, maxZoom:17, maxBounds:[[30.8,33.6],[32.0,35.2]], maxBoundsViscosity:.7});
+L.control.zoom({position:'bottomleft'}).addTo(map);
+L.control.scale({position:'bottomleft', imperial:false}).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
+  attribution:'© OpenStreetMap contributors © CARTO', subdomains:'abcd', maxZoom:19
+}).addTo(map);
+
+const gazaPoly = L.polygon(D.gaza,{color:'#22303e',weight:2.5,fillColor:'#ffffff',fillOpacity:.18}).addTo(map);
+map.fitBounds(gazaPoly.getBounds().pad(0.12));
+
+/* ---------- layer groups ---------- */
+const G = {};
+
+G.lineToday = L.layerGroup([
+  L.polyline(D.yline2,{color:'#8a6d00',weight:7,opacity:.9}),
+  L.polyline(D.yline2,{color:'#f0b90b',weight:4})
+]);
+G.lineOct = L.layerGroup([ L.polyline(D.yline,{color:'#a8870a',weight:2.5,dashArray:'7 6'}) ]);
+G.held = L.layerGroup([ L.polygon(D.held,{color:'#a04a42',weight:1,fillColor:'#c96f66',fillOpacity:.42}) ]);
+G.band = L.layerGroup([ L.polygon(D.band,{color:'#b02a20',weight:1.5,dashArray:'2 4',fillColor:'#d98880',fillOpacity:.5}) ]);
+G.corr = L.layerGroup(Object.entries(D.corridors).map(([n,b]) =>
+  L.rectangle(b,{color:'#b02a20',weight:1,dashArray:'3 3',fillColor:'#b02a20',fillOpacity:.16}).bindTooltip(n,{sticky:true,className:'city-label'})
+));
+
+const div = (cls,html,size,anchor)=>L.divIcon({className:cls,html,iconSize:[size,size],iconAnchor:[anchor||size/2,anchor||size/2]});
+
+G.outposts = L.layerGroup(D.outposts.map(p => L.marker(p,{icon:div('outpost-tri','▲',14)}).bindTooltip('Israeli outpost — 50+ along the line, 18+ built after the ceasefire (AP)',{className:'city-label'})));
+G.strikes  = L.layerGroup(D.strikes.map(p => L.marker(p,{icon:div('strike-star','★',18)}).bindTooltip('Ongoing strikes / fire across the line',{className:'city-label'})));
+G.crossings= L.layerGroup(D.crossings.map(c => L.marker(c.p,{icon:div('cross-sq','▢',16)}).bindTooltip('<b>'+c.n+'</b>',{className:'city-label'})));
+G.isf      = L.layerGroup([ L.marker(D.isf.p,{icon:div('isf-star','★',22)}).bindTooltip('<b>'+D.isf.n+'</b>',{className:'city-label'}) ]);
+G.displace = L.layerGroup(D.arrows.flatMap(a => {
+  const ln = L.polyline(a,{color:'#5a6572',weight:2,dashArray:'1 6',opacity:.85});
+  let dec = [];
+  if (L.polylineDecorator) dec = [L.polylineDecorator(ln,{patterns:[{offset:'100%',symbol:L.Symbol.arrowHead({pixelSize:9,polygon:true,pathOptions:{color:'#5a6572',fillOpacity:.85,weight:0}})}]})];
+  return [ln, ...dec];
+}));
+
+/* cities */
+G.cities = L.layerGroup();
+D.cities.forEach(c=>{
+  const cls = 'city-label' + (c.big?' city-big':'') + (c.held?' city-held':'') + (c.rafah?' city-rafah':'');
+  if (c.rafah){
+    L.marker(c.p,{icon:div('rafah-x','✕',24)}).addTo(G.cities);
+    L.marker(c.p,{icon:div('','',1)}).bindTooltip(c.n,{permanent:true,direction:'right',offset:[10,8],className:cls}).addTo(G.cities);
+  } else {
+    L.circleMarker(c.p,{radius:3,color:c.held?'#b02a20':'#1d2b3a',weight:1.5,fillColor:c.held?'#b02a20':'#1d2b3a',fillOpacity:1}).addTo(G.cities);
+    L.marker(c.p,{icon:div('','',1)}).bindTooltip(c.n,{permanent:true,direction:'right',offset:[6,0],className:cls}).addTo(G.cities);
+  }
+});
+
+/* evidence sites */
+G.evidence = L.layerGroup();
+const evidMarkers = {};
+D.evidence.forEach(e=>{
+  const m = L.marker(e.p,{icon:L.divIcon({className:'evid-diamond',html:'<span>'+e.id+'</span>',iconSize:[20,20],iconAnchor:[10,10]})})
+    .bindPopup('<b>'+e.id+'. '+e.t+'</b><br>'+e.d);
+  m.addTo(G.evidence);
+  evidMarkers[e.id]=m;
+});
+
+const LAYERS = [
+ ['yline-today',"'Yellow line' — today", G.lineToday, true],
+ ['yline-oct',"Line at ceasefire (10 Oct 2025)", G.lineOct, true],
+ ['band','Seized since the ceasefire', G.band, true],
+ ['held','Israeli-held zone (~60–70% of Gaza)', G.held, true],
+ ['corr','Military corridors', G.corr, true],
+ ['outpost','Israeli outposts (50+; 18+ new since ceasefire)', G.outposts, true],
+ ['strike','Ongoing strikes / fire across the line', G.strikes, true],
+ ['cross','Border crossings', G.crossings, true],
+ ['isf','ISF staging base (Kerem Shalom)', G.isf, true],
+ ['erased','City erased (Rafah — pop. 250,000)', null, true],
+ ['evid','Evidence sites (click list below)', G.evidence, true],
+ ['disp','Forced displacement', G.displace, true],
+ ['','Cities & towns', G.cities, true],
+];
+
+const layersDiv = document.getElementById('layers');
+LAYERS.forEach(([cls,label,grp,on])=>{
+  const row = document.createElement('label');
+  row.className='lrow';
+  row.innerHTML = '<input type="checkbox" '+(on?'checked':'')+'><span class="sw '+cls+'"></span><span>'+label+'</span>';
+  const box = row.querySelector('input');
+  box.addEventListener('change',()=>{ if(!grp) return; box.checked ? grp.addTo(map) : map.removeLayer(grp); });
+  layersDiv.appendChild(row);
+  if (grp && on) grp.addTo(map);
+});
+
+/* evidence list */
+const evDiv = document.getElementById('evidence');
+D.evidence.forEach(e=>{
+  const it = document.createElement('div');
+  it.className='item';
+  it.innerHTML = '<span class="num"><span>'+e.id+'</span></span><span class="t">'+e.t+'</span><div class="d">'+e.d+'</div>';
+  it.addEventListener('click',()=>{
+    map.flyTo(evidMarkers[e.id].getLatLng(), 13, {duration:1.1});
+    setTimeout(()=>evidMarkers[e.id].openPopup(), 1200);
+  });
+  evDiv.appendChild(it);
+});
+
+document.getElementById('collapseBtn').addEventListener('click',()=>{
+  document.getElementById('panel').classList.toggle('collapsed');
+});
+</script>
+</body>
+</html>
